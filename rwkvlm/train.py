@@ -108,14 +108,14 @@ if __name__ == "__main__":
 
     ########################################################################################################
 
-    import os, warnings, math, datetime, sys, time
+    import os, warnings, datetime
     import numpy as np
     import torch
     from torch.utils.data import DataLoader
     import deepspeed
     import pytorch_lightning as pl
     from pytorch_lightning import seed_everything
-    from pytorch_lightning.utilities import rank_zero_info, rank_zero_only
+    from pytorch_lightning.utilities import rank_zero_info
 
     if args.random_seed >= 0:
         print(f"########## WARNING: GLOBAL SEED {args.random_seed} THIS WILL AFFECT MULTIGPU SAMPLING ##########\n" * 3)

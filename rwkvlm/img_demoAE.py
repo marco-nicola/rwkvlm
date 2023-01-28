@@ -2,7 +2,7 @@
 # The RWKV Language Model - https://github.com/BlinkDL/RWKV-LM
 ########################################################################################################
 
-import torch, types, os
+import torch, types
 import numpy as np
 from PIL import Image
 import torch.nn as nn

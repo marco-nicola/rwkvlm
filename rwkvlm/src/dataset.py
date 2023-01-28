@@ -2,11 +2,10 @@
 # The RWKV Language Model - https://github.com/BlinkDL/RWKV-LM
 ########################################################################################################
 
-import json, math, random, os, sys
+import json, math, random, os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from pytorch_lightning.utilities import rank_zero_info
 from .binidx import MMapIndexedDataset
 from .utils import MaybeIsPrime
 
