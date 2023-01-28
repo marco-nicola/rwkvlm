@@ -5,7 +5,7 @@
 import numpy as np
 import os, sys, types, time, gc
 import torch
-from src.utils import TOKENIZER
+from .utils import TOKENIZER
 try:
     os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[1]
 except:
@@ -130,7 +130,7 @@ DEBUG_DEBUG = False  # True False --> show softmax output
 ########################################################################################################
 
 print(f'\nUsing {args.RUN_DEVICE.upper()}. Loading {MODEL_NAME}...')
-from src.model_run import RWKV_RNN
+from .model_run import RWKV_RNN
 
 model = RWKV_RNN(args)
 

@@ -258,17 +258,17 @@ if __name__ == "__main__":
 
     ########################################################################################################
 
-    from src.trainer import train_callback, generate_init_weight
-    from src.dataset import MyDataset
+    from .trainer import train_callback, generate_init_weight
+    from .dataset import MyDataset
 
     train_data = MyDataset(args)
     args.vocab_size = train_data.vocab_size
 
     if args.data_type == 'wds_img':
-        from src.model_img import RWKV_IMG
+        from .model_img import RWKV_IMG
         model = RWKV_IMG(args)
     else:
-        from src.model import RWKV
+        from .model import RWKV
         model = RWKV(args)
 
     if len(args.load_model) == 0 or args.my_pile_stage == 1:  # shall we build the initial weights?

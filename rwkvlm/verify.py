@@ -30,7 +30,7 @@ if TOKEN_MODE == 'pile':
     ctx_len = 1024
     UNKNOWN_CHAR = None
 
-from src.utils import TOKENIZER
+from .utils import TOKENIZER
 tokenizer = TOKENIZER(WORD_NAME, UNKNOWN_CHAR=UNKNOWN_CHAR)
 if TOKEN_MODE == 'pile':
     tokenizer.vocab_size = 50277
@@ -40,8 +40,8 @@ if TOKEN_MODE == 'pile':
 os.environ["RWKV_JIT_ON"] = "1"
 os.environ["RWKV_T_MAX"] = str(ctx_len)
 
-from src.model_run import RWKV_RNN
-from src.model import RWKV
+from .model_run import RWKV_RNN
+from .model import RWKV
 
 args = types.SimpleNamespace()
 args.vocab_size = tokenizer.vocab_size

@@ -3,11 +3,11 @@
 ########################################################################################################
 
 print('Loading...')
-from src.model_run import RWKV_RNN
+from .model_run import RWKV_RNN
 import numpy as np
 import os, copy, types, gc, sys
 import torch
-from src.utils import TOKENIZER
+from .utils import TOKENIZER
 try:
     os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[1]
 except:
