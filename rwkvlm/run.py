@@ -6,11 +6,11 @@ import gc
 import os
 import sys
 import time
-import types
 
 import numpy as np
 import torch
 
+from .eval import RWKV
 from .utils import TOKENIZER
 
 if len(sys.argv) > 1:
@@ -20,21 +20,16 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cuda.matmul.allow_tf32 = True
 np.set_printoptions(precision=4, suppress=True, linewidth=200)
-args = types.SimpleNamespace()
 
 # Step 1: set model & config
 
 # 'cuda' or 'cpu'
-args.RUN_DEVICE = 'cuda'
+DEVICE = 'cuda'
 
-# fp16 (good for GPU, does not work for CPU)
-# fp32 (good for CPU)
-# bf16 (less accurate, but works for CPU)
-args.FLOAT_MODE = 'fp16'
-
-# '1' or '0'. very useful for GPU/CPU fp32, but might be harmful
-#  for GPU fp16. please benchmark !!!
-os.environ['RWKV_JIT_ON'] = '1'
+# torch.float16 - torch.half - fp16 (good for GPU, does not work for CPU)
+# torch.float32 - torch.float - fp32 (good for CPU)
+# torch.bfloat16 - bf16 (less accurate, but works for CPU)
+DTYPE = torch.bfloat16
 
 TOKEN_MODE = 'pile'
 WORD_NAME = [
@@ -47,46 +42,27 @@ VOCAB_SIZE = 50277
 # Download Pile models: https://huggingface.co/BlinkDL
 # or, set MODEL_NAME to your fine-tuned model
 
-# MODEL_NAME = '.../RWKV-4-Pile-169M-20220807-8023'
+# MODEL_NAME = '.../RWKV-4-Pile-169M-20220807-8023.pth'
 # N_LAYER = 12
 # N_EMBD = 768
-# CTX_LEN = 1024
 
-# MODEL_NAME = '.../RWKV-4-Pile-430M-20220808-8066'
+# MODEL_NAME = '.../RWKV-4-Pile-430M-20220808-8066.pth'
 # N_LAYER = 24
 # N_EMBD = 1024
-# CTX_LEN = 1024
 
-# MODEL_NAME = '.../rwkv-4-pile-1b5/RWKV-4-Pile-1B5-20220903-8040'
+# MODEL_NAME = '.../rwkv-4-pile-1b5/RWKV-4-Pile-1B5-20220903-8040.pth'
 # N_LAYER = 24
 # N_EMBD = 2048
-# CTX_LEN = 1024
 
-# MODEL_NAME = '.../rwkv-4-pile-3b/RWKV-4-Pile-3B-20221008-8023'
+# MODEL_NAME = '.../rwkv-4-pile-3b/RWKV-4-Pile-3B-20221008-8023.pth'
 # N_LAYER = 32
 # N_EMBD = 2560
-# CTX_LEN = 1024
 
-# MODEL_NAME = '.../rwkv-4-pile-7b/RWKV-4-Pile-7B-20221115-8047'
+# MODEL_NAME = '.../rwkv-4-pile-7b/RWKV-4-Pile-7B-20221115-8047.pth'
 # N_LAYER = 32
 # N_EMBD = 4096
-# CTX_LEN = 1024
 
-MODEL_NAME = '/home/m/dev/rwkvlm/rwkv-4-pile-169m/RWKV-4-Pile-169M-20220807-8023'
-N_LAYER = 12
-N_EMBD = 768
-CTX_LEN = 1024
-
-args.MODEL_NAME = MODEL_NAME
-args.n_layer = N_LAYER
-args.n_embd = N_EMBD
-args.ctx_len = CTX_LEN
-args.vocab_size = VOCAB_SIZE
-args.head_qk = 0
-args.pre_ffn = 0
-args.grad_cp = 0
-args.my_pos_emb = 0
-os.environ['RWKV_RUN_DEVICE'] = args.RUN_DEVICE
+MODEL_NAME = '/home/m/dev/rwkvlm/rwkv-4-pile-169m/RWKV-4-Pile-169M-20220807-8023.pth'
 
 # Step 2: set prompt & sampling stuffs
 
@@ -106,13 +82,14 @@ DEBUG_DEBUG = False  # True False --> show softmax output
 
 ###############################################################################
 
-print(f'\nUsing {args.RUN_DEVICE.upper()}. Loading {MODEL_NAME}...')
-from .model_run import RWKV_RNN
-
-model = RWKV_RNN(args)
+model = torch.jit.script(RWKV(
+    model_name=MODEL_NAME,
+    dtype=DTYPE,
+    device=DEVICE,
+))
 
 print('\nOptimizing speed...')
-model.forward([187], None)
+model.forward([187], model.new_state())
 gc.collect()
 torch.cuda.empty_cache()
 
@@ -152,7 +129,7 @@ def record_time(name):
         time_slot[name] = tt
 
 
-INIT_STATE = None
+INIT_STATE = model.new_state()
 INIT_OUT = None
 
 for TRIAL in range(1 if DEBUG_DEBUG else NUM_TRIALS):
@@ -167,7 +144,7 @@ for TRIAL in range(1 if DEBUG_DEBUG else NUM_TRIALS):
             if i == src_len - 1:
                 INIT_OUT, INIT_STATE = model.forward(x, INIT_STATE)
             else:
-                INIT_STATE = model.forward(x, INIT_STATE, preprocess_only=True)
+                INIT_STATE = model.forward_preprocess(x, INIT_STATE)
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -175,7 +152,7 @@ for TRIAL in range(1 if DEBUG_DEBUG else NUM_TRIALS):
     out_last = src_len
     for i in range(src_len, src_len + (1 if DEBUG_DEBUG else LENGTH_PER_TRIAL)):
         x = ctx[: i + 1]
-        x = x[-CTX_LEN:]
+        x = x[-model.ctx_len:]
 
         if i == src_len:
             out = INIT_OUT.clone()
@@ -191,7 +168,7 @@ for TRIAL in range(1 if DEBUG_DEBUG else NUM_TRIALS):
         ttt = tokenizer.sample_logits(
             out,
             x,
-            CTX_LEN,
+            model.ctx_len,
             temperature=TEMPERATURE,
             top_p_usual=TOP_P,
             top_p_newline=TOP_P_NEWLINE,
@@ -205,7 +182,7 @@ for TRIAL in range(1 if DEBUG_DEBUG else NUM_TRIALS):
             char = tokenizer.tokenizer.decode(ctx[out_last:])
             if '\ufffd' not in char:  # is valid utf8 string?
                 print(char, end='', flush=True)
-                out_last = i+1
+                out_last = i + 1
 
     record_time('total')
     # print(f'\n\n{time_slot}\n\n')

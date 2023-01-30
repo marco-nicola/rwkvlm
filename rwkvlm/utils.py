@@ -3,16 +3,6 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-time_slot = {}
-time_ref = time.time_ns()
-
-def record_time(name):
-    if name not in time_slot:
-        time_slot[name] = 1e20
-    tt = (time.time_ns() - time_ref) / 1e9
-    if tt < time_slot[name]:
-        time_slot[name] = tt
-
 class TOKENIZER():
     def __init__(self, WORD_NAME, UNKNOWN_CHAR='\ue083'):
         if 'list' in str(type(WORD_NAME)):
@@ -60,7 +50,7 @@ class TOKENIZER():
         else:
             top_p = top_p_usual
 
-        if os.environ["RWKV_RUN_DEVICE"] == "cpu":
+        if False: # TODO: os.environ["RWKV_RUN_DEVICE"] == "cpu":
             probs = probs.numpy()
             sorted_probs = np.sort(probs)[::-1]
             cumulative_probs = np.cumsum(sorted_probs)
