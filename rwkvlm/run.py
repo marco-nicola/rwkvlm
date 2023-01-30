@@ -9,9 +9,11 @@ import time
 
 import numpy as np
 import torch
+from torch.nn.functional import softmax
+from torch import argmax, cumsum, multinomial, sort
+from transformers import PreTrainedTokenizerFast
 
 from .eval import RWKV
-from .utils import TOKENIZER
 
 if len(sys.argv) > 1:
     os.environ['CUDA_VISIBLE_DEVICES'] = sys.argv[1]
@@ -32,12 +34,7 @@ DEVICE = 'cuda'
 DTYPE = torch.bfloat16
 
 TOKEN_MODE = 'pile'
-WORD_NAME = [
-    '20B_tokenizer.json',
-    '20B_tokenizer.json',
-]  # [vocab, vocab] for Pile model
-UNKNOWN_CHAR = None
-VOCAB_SIZE = 50277
+TOKENIZER_FILENAME = '20B_tokenizer.json'  # vocab for Pile model
 
 # Download Pile models: https://huggingface.co/BlinkDL
 # or, set MODEL_NAME to your fine-tuned model
@@ -62,7 +59,7 @@ VOCAB_SIZE = 50277
 # N_LAYER = 32
 # N_EMBD = 4096
 
-MODEL_NAME = '/home/m/dev/rwkvlm/rwkv-4-pile-169m/RWKV-4-Pile-169M-20220807-8023.pth'
+MODEL_NAME = '/home/m/go/src/verbaflow/models/rwkv-4-pile-169m/pytorch_model.pt'
 
 # Step 2: set prompt & sampling stuffs
 
@@ -93,20 +90,14 @@ model.forward([187], model.new_state())
 gc.collect()
 torch.cuda.empty_cache()
 
-# input(0)
-
-print(f'\nLoading tokenizer {WORD_NAME}...')
-tokenizer = TOKENIZER(WORD_NAME, UNKNOWN_CHAR=UNKNOWN_CHAR)
+print('\nLoading tokenizer...')
+tokenizer = PreTrainedTokenizerFast(tokenizer_file=TOKENIZER_FILENAME)
 if TOKEN_MODE == 'pile':
-    assert tokenizer.tokenizer.decode([187]) == '\n'
+    assert tokenizer.decode([187]) == '\n'
 
 ###############################################################################
 
-if tokenizer.charMode:
-    CONTEXT = tokenizer.refine_context(CONTEXT)
-    ctx = [tokenizer.stoi.get(s, tokenizer.UNKNOWN_CHAR) for s in CONTEXT]
-else:
-    ctx = tokenizer.tokenizer.encode(CONTEXT)
+ctx = tokenizer.encode(CONTEXT)
 src_len = len(ctx)
 src_ctx = ctx.copy()
 
@@ -127,6 +118,21 @@ def record_time(name):
     tt = (time.time_ns() - time_ref) / 1e9
     if tt < time_slot[name]:
         time_slot[name] = tt
+
+
+def sample_logits(out, temperature=1.0, top_p=None):
+    probs = softmax(out, dim=-1)
+
+    sorted_probs = sort(probs, descending=True).values
+    cumulative_probs = cumsum(sorted_probs, dim=-1)
+
+    am = argmax((cumulative_probs > top_p).byte()).item()
+    cutoff = float(sorted_probs[am])
+
+    probs[probs < cutoff] = 0
+    if temperature != 1.0:
+        probs = probs.pow(1.0 / temperature)
+    return multinomial(probs, num_samples=1).item()
 
 
 INIT_STATE = model.new_state()
@@ -165,24 +171,13 @@ for TRIAL in range(1 if DEBUG_DEBUG else NUM_TRIALS):
         if TOKEN_MODE == 'pile':
             out[0] = -999999999  # disable <|endoftext|>
 
-        ttt = tokenizer.sample_logits(
-            out,
-            x,
-            model.ctx_len,
-            temperature=TEMPERATURE,
-            top_p_usual=TOP_P,
-            top_p_newline=TOP_P_NEWLINE,
-        )
+        ttt = sample_logits(out, temperature=TEMPERATURE, top_p=TOP_P)
         ctx += [ttt]
 
-        if tokenizer.charMode:
-            char = tokenizer.itos[ttt]
+        char = tokenizer.decode(ctx[out_last:])
+        if '\ufffd' not in char:  # is valid utf8 string?
             print(char, end='', flush=True)
-        else:
-            char = tokenizer.tokenizer.decode(ctx[out_last:])
-            if '\ufffd' not in char:  # is valid utf8 string?
-                print(char, end='', flush=True)
-                out_last = i + 1
+            out_last = i + 1
 
     record_time('total')
     # print(f'\n\n{time_slot}\n\n')
